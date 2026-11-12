@@ -1,0 +1,2165 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PokéBid TCG — Leilões em Tempo Real de Cartas Pokémon</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            slate: {
+              925: '#0b1120',
+              950: '#060a14',
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #060714;
+      background-image:
+        radial-gradient(circle at 12% 18%, rgba(168, 85, 247, 0.14), transparent 34%),
+        radial-gradient(circle at 88% 12%, rgba(236, 72, 153, 0.13), transparent 36%),
+        radial-gradient(circle at 50% 90%, rgba(250, 204, 21, 0.08), transparent 40%);
+      color: #f8fafc;
+    }
+
+    /* Efeito holo neon nos cards de Pokémon */
+    .tcg-card-shine {
+      position: relative;
+      overflow: hidden;
+    }
+    .tcg-card-shine::after {
+      content: '';
+      position: absolute;
+      inset: -100%;
+      background: linear-gradient(
+        115deg,
+        transparent 32%,
+        rgba(236, 72, 153, 0.18) 44%,
+        rgba(250, 204, 21, 0.22) 50%,
+        rgba(168, 85, 247, 0.18) 56%,
+        transparent 68%
+      );
+      transform: translateX(-60%);
+      transition: transform 0.7s ease;
+      pointer-events: none;
+    }
+    .tcg-card-shine:hover::after {
+      transform: translateX(60%);
+    }
+
+    .neon-border-poke {
+      box-shadow: 0 0 24px rgba(168, 85, 247, 0.14), 0 0 12px rgba(236, 72, 153, 0.1);
+    }
+
+    /* Scrollbar customizada */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0a0b1e;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #4c1d95;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #ec4899;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-fuchsia-500/30 selection:text-fuchsia-200">
+
+  <!-- Toast / Notificação Flutuante (sem alert) -->
+  <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+  <!-- Navbar Superior -->
+  <header class="sticky top-0 z-40 bg-[#070816]/90 backdrop-blur-md border-b border-purple-500/25">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex flex-wrap items-center justify-between gap-3 py-3.5">
+        <!-- Marca -->
+        <div class="flex items-center gap-3 cursor-pointer" onclick="switchMainView('marketplace')">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 via-fuchsia-500 to-purple-600 p-0.5 shadow-lg shadow-fuchsia-500/25">
+            <div class="w-full h-full bg-[#08091a] rounded-[10px] flex items-center justify-center">
+              <!-- Ícone Pokébola estilizada -->
+              <svg class="w-6 h-6 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h6m6 0h6" />
+                <circle cx="12" cy="12" r="3" fill="#ec4899" />
+              </svg>
+            </div>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-lg font-extrabold tracking-tight text-white">PokéBid <span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-fuchsia-400 to-purple-400">TCG</span></span>
+              <span class="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/40">
+                <span class="w-1.5 h-1.5 rounded-full bg-fuchsia-400 animate-pulse"></span> Ao Vivo
+              </span>
+            </div>
+            <p class="text-[11px] text-slate-400">Leilões Abertos de Cartas Pokémon • Sem Cadastro Prévio</p>
+          </div>
+        </div>
+
+        <!-- Navegação Pública & Área Restrita -->
+        <div class="flex items-center gap-2 flex-wrap">
+          <button id="nav-marketplace" onclick="switchMainView('marketplace')" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition bg-purple-950/70 text-white border border-purple-500/40">
+            Vitrine Pública
+          </button>
+
+          <!-- Botão do Painel quando autenticado como Leiloeiro ou Admin -->
+          <button id="nav-dashboard" onclick="switchMainView('dashboard')" class="hidden px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition bg-gradient-to-r from-amber-400 to-fuchsia-500 text-slate-950 shadow-lg shadow-fuchsia-500/20">
+            Painel &amp; Gestão
+          </button>
+
+          <!-- Botão Discreto Área Restrita / Alternar Acesso -->
+          <button id="restricted-access-btn" onclick="openRestrictedAccessModal()" class="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-purple-950/60 border border-purple-500/30 hover:border-fuchsia-500/50 transition text-left">
+            <svg class="w-4 h-4 text-fuchsia-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+            </svg>
+            <div>
+              <div id="header-access-title" class="text-[11px] font-bold text-slate-200 leading-tight">Área Restrita</div>
+              <div id="header-access-subtitle" class="text-[10px] text-purple-300 font-medium">Acesso Leiloeiro &amp; Admin</div>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Barra de Status do Sistema / Simulações -->
+  <div class="bg-purple-950/25 border-b border-purple-500/20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300">
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="flex items-center gap-1.5">
+          <span id="sync-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span id="sync-status-text">Vitrine Aberta • Lances em Tempo Real</span>
+        </span>
+        <span class="hidden md:inline text-purple-500/50">|</span>
+        <span class="hidden md:inline text-slate-400">Limpeza automática: <strong class="text-fuchsia-300">24h após encerramento</strong></span>
+      </div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <button onclick="simulate24hCleanup()" class="px-2.5 py-1 rounded-lg bg-fuchsia-500/15 hover:bg-fuchsia-500/25 text-fuchsia-300 border border-fuchsia-500/35 font-semibold transition flex items-center gap-1.5" title="Avança +24h nos leilões encerrados para testar a limpeza da vitrine">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          Simular +24h em Encerrados
+        </button>
+        <button onclick="simulateCompetitorBid()" class="px-2.5 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border border-purple-500/40 font-semibold transition flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          Simular Lance Concorrente
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTEÚDO PRINCIPAL -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+    <!-- ==================== VIEW 1: VITRINE PÚBLICA DE LEILÕES ==================== -->
+    <section id="view-marketplace" class="space-y-6">
+      <!-- Banner Hero Neon Pokémon -->
+      <div class="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#0d0a1f] via-[#150d2e] to-[#230b2b] border border-purple-500/30 neon-border-poke p-6 sm:p-8">
+        <div class="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          <div class="max-w-2xl space-y-2.5">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-fuchsia-500/15 border border-fuchsia-500/35 text-fuchsia-300 text-xs font-bold">
+              ⚡ Sem Login Prévio • Escolha o Valor e Confirme seu Contato
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+              Arremate cartas raras de <span class="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-fuchsia-400 to-purple-400">Pokémon TCG</span> em tempo real
+            </h1>
+            <p class="text-sm text-slate-300 leading-relaxed">
+              Navegue livremente, clique em um dos <strong class="text-amber-300">4 patamares de lance</strong> e informe seu WhatsApp e e-mail na hora para validar sua oferta. Lotes encerrados somem da vitrine após 24h.
+            </p>
+          </div>
+
+          <!-- Resumo Rápido -->
+          <div class="grid grid-cols-3 gap-3 sm:gap-4 shrink-0">
+            <div class="bg-[#090818]/85 border border-purple-500/30 rounded-xl p-3.5 text-center">
+              <div id="stat-live-count" class="text-xl sm:text-2xl font-extrabold text-amber-400">0</div>
+              <div class="text-[11px] text-slate-300 font-medium mt-0.5">Ao Vivo Agora</div>
+            </div>
+            <div class="bg-[#090818]/85 border border-purple-500/30 rounded-xl p-3.5 text-center">
+              <div id="stat-scheduled-count" class="text-xl sm:text-2xl font-extrabold text-purple-400">0</div>
+              <div class="text-[11px] text-slate-300 font-medium mt-0.5">Agendados</div>
+            </div>
+            <div class="bg-[#090818]/85 border border-fuchsia-500/30 rounded-xl p-3.5 text-center">
+              <div id="stat-ended-count" class="text-xl sm:text-2xl font-extrabold text-fuchsia-400">0</div>
+              <div class="text-[11px] text-slate-300 font-medium mt-0.5">Recentes (&lt;24h)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filtros e Busca -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#0c0b20]/90 p-3.5 rounded-2xl border border-purple-500/25">
+        <div class="flex flex-wrap items-center gap-2">
+          <button onclick="setStatusFilter('ALL')" data-filter="ALL" class="filter-chip px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 transition">
+            Todos Visíveis
+          </button>
+          <button onclick="setStatusFilter('LIVE')" data-filter="LIVE" class="filter-chip px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-purple-950/60 text-slate-200 hover:bg-purple-900/70 border border-purple-500/20 transition">
+            Ao Vivo
+          </button>
+          <button onclick="setStatusFilter('SCHEDULED')" data-filter="SCHEDULED" class="filter-chip px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-purple-950/60 text-slate-200 hover:bg-purple-900/70 border border-purple-500/20 transition">
+            Agendados
+          </button>
+          <button onclick="setStatusFilter('ENDED')" data-filter="ENDED" class="filter-chip px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-purple-950/60 text-slate-200 hover:bg-purple-900/70 border border-purple-500/20 transition">
+            Encerrados (&lt;24h)
+          </button>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <div class="relative flex-1 sm:w-64">
+            <input
+              id="search-input"
+              type="text"
+              oninput="renderAuctionGrid()"
+              placeholder="Buscar carta, coleção ou raridade..."
+              class="w-full bg-[#070714] border border-purple-500/30 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-fuchsia-500"
+            />
+            <svg class="w-4 h-4 text-purple-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+          </div>
+          <button id="quick-new-card-btn" onclick="openNewAuctionModal()" class="hidden px-3.5 py-2 rounded-xl bg-gradient-to-r from-fuchsia-500 to-purple-600 hover:from-fuchsia-400 hover:to-purple-500 text-white font-bold text-xs transition shrink-0 flex items-center gap-1.5 shadow-lg shadow-fuchsia-500/25">
+            <span>+ Nova Carta</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Grade de Cartas em Leilão -->
+      <div id="auction-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        <!-- Renderizado dinamicamente via JS -->
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 2: PAINEL ADMINISTRATIVO & LEILOEIRO ==================== -->
+    <section id="view-dashboard" class="hidden space-y-6">
+      <!-- Cabeçalho do Painel -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0d0b22]/90 border border-purple-500/30 rounded-2xl p-5">
+        <div>
+          <div class="flex items-center gap-2 mb-1">
+            <span id="dashboard-badge" class="inline-block px-2.5 py-0.5 rounded-md text-[11px] font-bold uppercase tracking-wider bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40">
+              Painel Administrativo
+            </span>
+            <button onclick="logoutRestrictedRole()" class="text-[11px] text-slate-400 hover:text-rose-400 underline transition">
+              Sair da Área Restrita
+            </button>
+          </div>
+          <h2 id="dashboard-title" class="text-xl sm:text-2xl font-extrabold text-white">Gestão de Leilões, Contatos de Arremate &amp; Percentuais</h2>
+          <p id="dashboard-subtitle" class="text-xs sm:text-sm text-slate-400 mt-0.5">
+            Cadastre cartas com upload de foto, configure os 4 patamares de lance, visualize contatos dos vencedores e audite lotes arquivados (+24h).
+          </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2.5">
+          <button onclick="openNewAuctionModal()" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-400 to-fuchsia-500 hover:opacity-95 text-slate-950 font-extrabold text-xs sm:text-sm transition shadow-lg shadow-fuchsia-500/20 flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+            Cadastrar Nova Carta
+          </button>
+          <button onclick="switchMainView('marketplace')" class="px-4 py-2.5 rounded-xl bg-purple-950/70 hover:bg-purple-900/70 text-slate-200 font-semibold text-xs sm:text-sm border border-purple-500/30 transition">
+            Ver Vitrine Pública
+          </button>
+        </div>
+      </div>
+
+      <!-- KPIs Financeiros e Porcentagens -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-[#0d0b22]/90 border border-purple-500/25 rounded-2xl p-5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-slate-400">Volume Total (Lances Atuais)</span>
+            <span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-purple-500/20 text-purple-300">100% Bruto</span>
+          </div>
+          <div id="kpi-total-volume" class="text-2xl font-extrabold text-white mt-2">R$ 0,00</div>
+          <p id="kpi-total-sub" class="text-xs text-slate-400 mt-1">0 cartas com lances ativos</p>
+        </div>
+
+        <div class="bg-[#0d0b22]/90 border border-amber-500/25 rounded-2xl p-5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-slate-400">Receita Plataforma (Comissão)</span>
+            <span id="kpi-platform-pct" class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300">10%</span>
+          </div>
+          <div id="kpi-platform-revenue" class="text-2xl font-extrabold text-amber-400 mt-2">R$ 0,00</div>
+          <p class="text-xs text-slate-400 mt-1">Retenção sobre arremates</p>
+        </div>
+
+        <div class="bg-[#0d0b22]/90 border border-fuchsia-500/25 rounded-2xl p-5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-slate-400">Repasse aos Leiloeiros</span>
+            <span id="kpi-seller-pct" class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-fuchsia-500/20 text-fuchsia-300">90%</span>
+          </div>
+          <div id="kpi-seller-payout" class="text-2xl font-extrabold text-fuchsia-400 mt-2">R$ 0,00</div>
+          <p class="text-xs text-slate-400 mt-1">Valor líquido aos vendedores</p>
+        </div>
+
+        <div class="bg-[#0d0b22]/90 border border-purple-500/25 rounded-2xl p-5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-slate-400">Taxa de Conversão</span>
+            <span id="kpi-conversion-badge" class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300">0%</span>
+          </div>
+          <div id="kpi-conversion-rate" class="text-2xl font-extrabold text-white mt-2">0%</div>
+          <p id="kpi-conversion-sub" class="text-xs text-slate-400 mt-1">Cartas com pelo menos 1 lance</p>
+        </div>
+      </div>
+
+      <!-- Gráficos e Configuração de Comissão (Admin) -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <!-- Gráfico de Distribuição Percentual por Leiloeiro -->
+        <div class="lg:col-span-2 bg-[#0d0b22]/90 border border-purple-500/25 rounded-2xl p-5 flex flex-col justify-between">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 class="text-base font-bold text-white">Participação Percentual de Vendas por Leiloeiro</h3>
+              <p class="text-xs text-slate-400">Proporção do volume arrematado/em disputa (inclui ativos e arquivados +24h)</p>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+            <div class="h-52 relative flex items-center justify-center">
+              <canvas id="salesShareChart"></canvas>
+            </div>
+            <div id="seller-breakdown-list" class="space-y-2.5">
+              <!-- Barras de porcentagem preenchidas via JS -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Card de Configuração de Taxa da Plataforma & Perfis -->
+        <div class="bg-[#0d0b22]/90 border border-purple-500/25 rounded-2xl p-5 flex flex-col justify-between space-y-4">
+          <div>
+            <h3 class="text-base font-bold text-white flex items-center gap-2">
+              <svg class="w-4 h-4 text-fuchsia-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+              Regras &amp; Comissão
+            </h3>
+            <p class="text-xs text-slate-400 mt-1">
+              Defina o percentual retido pela plataforma sobre cada carta arrematada.
+            </p>
+
+            <div id="admin-fee-controls" class="mt-4 space-y-3">
+              <div>
+                <div class="flex justify-between text-xs font-semibold mb-1.5">
+                  <span class="text-slate-300">Comissão da Plataforma</span>
+                  <span id="fee-slider-label" class="text-amber-400 font-bold">10%</span>
+                </div>
+                <input id="platform-fee-input" type="range" min="0" max="35" step="1" value="10" oninput="handleFeeChange(this.value)" class="w-full accent-fuchsia-500 cursor-pointer" />
+                <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+                  <span>0% (Isento)</span>
+                  <span>15%</span>
+                  <span>35%</span>
+                </div>
+              </div>
+            </div>
+            <div id="auctioneer-fee-readonly" class="hidden mt-4 p-3 rounded-xl bg-[#070714] border border-purple-500/25 text-xs text-slate-300">
+              A taxa administrativa vigente é de <strong class="text-amber-400" id="readonly-fee-val">10%</strong>. Você recebe <strong class="text-fuchsia-400" id="readonly-net-val">90%</strong> do valor final arrematado.
+            </div>
+          </div>
+
+          <div class="pt-3 border-t border-purple-500/20 space-y-2">
+            <div class="text-xs font-semibold text-slate-300">Distribuição dos Lotes</div>
+            <div id="status-percentage-bars" class="space-y-2 text-xs">
+              <!-- Preenchido via JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabela de Gerenciamento de Lotes, Contatos dos Arrematantes e Aba Arquivados (+24h) -->
+      <div class="bg-[#0d0b22]/90 border border-purple-500/25 rounded-2xl overflow-hidden">
+        <div class="p-5 border-b border-purple-500/20 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 class="text-base font-bold text-white">Gerenciamento de Cartas, Contatos dos Vencedores &amp; Lances</h3>
+            <p class="text-xs text-slate-400">Visualize telefone (WhatsApp) e e-mail do líder de cada carta e audite os leilões arquivados após 24h.</p>
+          </div>
+
+          <!-- Abas do Painel: Ativos na Vitrine vs Arquivados (+24h) -->
+          <div class="flex items-center gap-2 bg-[#070714] p-1 rounded-xl border border-purple-500/25">
+            <button id="tab-admin-active" onclick="setAdminTab('ACTIVE')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 transition">
+              Na Vitrine (Ativos &amp; &lt;24h)
+            </button>
+            <button id="tab-admin-archived" onclick="setAdminTab('ARCHIVED')" class="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition flex items-center gap-1.5">
+              <span>Arquivados (+24h)</span>
+              <span id="archived-count-badge" class="px-1.5 py-0.2 rounded-full text-[10px] bg-fuchsia-500/25 text-fuchsia-300 font-bold">0</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-[#070714] text-[11px] uppercase tracking-wider text-purple-300/80 border-b border-purple-500/20">
+                <th class="py-3.5 px-4 font-semibold">Carta / Coleção</th>
+                <th class="py-3.5 px-4 font-semibold">Leiloeiro</th>
+                <th class="py-3.5 px-4 font-semibold">Janela de Horário</th>
+                <th class="py-3.5 px-4 font-semibold">4 Lances Pré-Definidos</th>
+                <th class="py-3.5 px-4 font-semibold">Maior Lance &amp; Contato (WhatsApp/E-mail)</th>
+                <th class="py-3.5 px-4 font-semibold">Repasse Líquido</th>
+                <th class="py-3.5 px-4 font-semibold text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="admin-auctions-table" class="divide-y divide-purple-500/15 text-xs">
+              <!-- Linhas preenchidas via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== MODAL 1: DETALHES DO LEILÃO & DAR LANCE ==================== -->
+  <div id="bid-modal" class="hidden fixed inset-0 z-50 bg-[#050510]/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-[#0e0c24] border border-purple-500/35 rounded-2xl max-w-4xl w-full overflow-hidden shadow-2xl shadow-purple-950/60 my-auto">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-purple-500/20 bg-[#080716]">
+        <div class="flex items-center gap-2.5">
+          <span id="modal-status-badge" class="px-2.5 py-1 rounded-full text-xs font-bold">AO VIVO</span>
+          <span id="modal-set-info" class="text-xs text-purple-300 font-medium">Escarlate e Violeta • Ultra Rara</span>
+        </div>
+        <button onclick="closeBidModal()" class="p-2 rounded-xl bg-purple-950/70 hover:bg-fuchsia-500/25 text-slate-300 hover:text-white transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-6 p-6">
+        <!-- Coluna Esquerda: Imagem da Carta -->
+        <div class="md:col-span-5 flex flex-col items-center">
+          <div class="w-full max-w-[280px] aspect-[2.5/3.5] rounded-2xl bg-[#070714] border-2 border-fuchsia-500/40 p-2 shadow-xl shadow-fuchsia-950/40 tcg-card-shine">
+            <img id="modal-card-image" src="" alt="Carta Pokémon" class="w-full h-full object-cover rounded-xl" />
+          </div>
+          <div class="w-full max-w-[280px] mt-3 grid grid-cols-2 gap-2 text-center">
+            <div class="bg-[#080716] border border-purple-500/25 rounded-xl p-2">
+              <div class="text-[10px] text-slate-400 uppercase">Conservação</div>
+              <div id="modal-condition" class="text-xs font-bold text-amber-400 mt-0.5">Near Mint (NM)</div>
+            </div>
+            <div class="bg-[#080716] border border-purple-500/25 rounded-xl p-2">
+              <div class="text-[10px] text-slate-400 uppercase">Leiloeiro</div>
+              <div id="modal-seller" class="text-xs font-bold text-slate-200 mt-0.5 truncate">PokeMaster Store</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Coluna Direita: Cronômetro, 4 Botões de Lance e Histórico -->
+        <div class="md:col-span-7 flex flex-col justify-between space-y-5">
+          <div>
+            <h2 id="modal-card-title" class="text-2xl font-extrabold text-white">Charizard ex Special Illustration Rare</h2>
+            <p class="text-xs text-slate-400 mt-1">Sem necessidade de cadastro: clique no valor desejado e informe seu contato para validar o lance.</p>
+
+            <!-- Placar Atual + Cronômetro -->
+            <div class="grid grid-cols-2 gap-3 mt-4">
+              <div class="bg-[#080716] border border-amber-500/30 rounded-xl p-3.5">
+                <div class="text-[11px] text-slate-400 font-medium">Maior Lance Atual</div>
+                <div id="modal-current-bid" class="text-2xl font-black text-amber-400 mt-0.5">R$ 0,00</div>
+                <div id="modal-highest-bidder" class="text-[11px] text-fuchsia-300 mt-1 truncate">Nenhum lance ainda</div>
+              </div>
+              <div class="bg-[#080716] border border-purple-500/30 rounded-xl p-3.5">
+                <div id="modal-timer-label" class="text-[11px] text-slate-400 font-medium">Encerra em</div>
+                <div id="modal-countdown" class="text-2xl font-black text-fuchsia-400 font-mono mt-0.5">00:00:00</div>
+                <div id="modal-schedule-window" class="text-[11px] text-slate-400 mt-1">10:00 até 18:00</div>
+              </div>
+            </div>
+
+            <!-- Área dos 4 Botões Pré-Destinados -->
+            <div class="mt-5">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-bold text-slate-200 uppercase tracking-wider">Escolha um dos 4 Lances Pré-Definidos</span>
+                <span class="text-[11px] text-amber-300 font-medium">Pede contato ao confirmar</span>
+              </div>
+              <div id="modal-preset-buttons" class="grid grid-cols-2 gap-2.5">
+                <!-- 4 botões injetados via JS -->
+              </div>
+              <p id="modal-bid-hint" class="text-[11px] text-slate-400 mt-2">
+                Valores iguais ou menores que o lance atual ficam bloqueados automaticamente.
+              </p>
+            </div>
+          </div>
+
+          <!-- Histórico de Lances ao Vivo (Privacidade: exibe apenas nome/apelido publicamente) -->
+          <div class="bg-[#080716]/90 border border-purple-500/25 rounded-xl p-3.5">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-bold text-slate-200">Histórico Público de Lances</span>
+              <span id="modal-bid-count" class="text-[11px] text-purple-300">0 lances</span>
+            </div>
+            <div id="modal-bid-history" class="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+              <!-- Itens do histórico -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 2: CAPTURA OBRIGATÓRIA DE CONTATO NO LANCE ==================== -->
+  <div id="contact-bid-modal" class="hidden fixed inset-0 z-50 bg-[#050510]/90 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="bg-[#0f0c29] border border-fuchsia-500/45 rounded-2xl max-w-md w-full overflow-hidden shadow-2xl shadow-fuchsia-950/60">
+      <div class="px-6 py-4 bg-gradient-to-r from-purple-950 via-[#1d0f3a] to-fuchsia-950/80 border-b border-fuchsia-500/30 flex items-center justify-between">
+        <div>
+          <span class="text-[10px] font-extrabold uppercase tracking-wider text-amber-400">Confirmação Rápida de Lance</span>
+          <h3 id="contact-modal-card-title" class="text-base font-extrabold text-white truncate max-w-[280px]">Charizard ex</h3>
+        </div>
+        <button onclick="closeContactBidModal()" class="p-1.5 rounded-lg bg-slate-900/80 text-slate-300 hover:text-white">✕</button>
+      </div>
+
+      <form id="contact-bid-form" onsubmit="submitConfirmedBidWithContact(event)" class="p-6 space-y-4">
+        <div class="bg-[#070714] border border-amber-500/35 rounded-xl p-3.5 flex items-center justify-between">
+          <div>
+            <div class="text-[11px] text-slate-400">Valor do Seu Lance</div>
+            <div id="contact-modal-bid-value" class="text-2xl font-black text-amber-400">R$ 0,00</div>
+          </div>
+          <span class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/35">
+            Sem Login
+          </span>
+        </div>
+
+        <p class="text-xs text-slate-300 leading-relaxed">
+          Para validar seu lance e permitir que o leiloeiro envie o link de pagamento caso você arremate, preencha seus dados de contato:
+        </p>
+
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-200 mb-1">Nome ou Apelido de Treinador *</label>
+            <input
+              id="bidder-name-input"
+              type="text"
+              required
+              minlength="2"
+              placeholder="Ex: Ash Ketchum / Lucas Silva"
+              class="w-full bg-[#070714] border border-purple-500/35 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-200 mb-1">Telefone / WhatsApp com DDD *</label>
+            <input
+              id="bidder-phone-input"
+              type="tel"
+              required
+              oninput="applyPhoneMask(this)"
+              placeholder="(11) 99999-9999"
+              class="w-full bg-[#070714] border border-purple-500/35 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-fuchsia-400"
+            />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-200 mb-1">E-mail para Notificação *</label>
+            <input
+              id="bidder-email-input"
+              type="email"
+              required
+              placeholder="seuemail@exemplo.com"
+              class="w-full bg-[#070714] border border-purple-500/35 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-fuchsia-400"
+            />
+          </div>
+        </div>
+
+        <div class="text-[11px] text-slate-400 bg-purple-950/30 border border-purple-500/20 rounded-xl p-2.5">
+          🔒 Seus dados ficam salvos apenas neste navegador para agilizar seus próximos lances e são visíveis somente ao leiloeiro responsável.
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button type="button" onclick="closeContactBidModal()" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 transition">
+            Cancelar
+          </button>
+          <button type="submit" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-400 to-fuchsia-500 hover:opacity-95 text-slate-950 text-xs font-black transition shadow-lg shadow-fuchsia-500/25">
+            Confirmar Lance Agora
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 3: CADASTRAR / EDITAR CARTA (ADMIN & LEILOEIRO) ==================== -->
+  <div id="form-modal" class="hidden fixed inset-0 z-50 bg-[#050510]/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-[#0e0c24] border border-purple-500/35 rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl my-auto">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-purple-500/20 bg-[#080716]">
+        <h3 id="form-modal-title" class="text-base sm:text-lg font-extrabold text-white">Cadastrar Nova Carta para Leilão</h3>
+        <button onclick="closeFormModal()" class="p-2 rounded-xl bg-purple-950/70 hover:bg-fuchsia-500/25 text-slate-300 transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <form id="auction-form" onsubmit="handleSaveAuction(event)" class="p-6 space-y-4">
+        <input type="hidden" id="edit-auction-id" value="" />
+
+        <div class="grid grid-cols-1 sm:grid-cols-12 gap-4">
+          <!-- Upload de Foto + Preview -->
+          <div class="sm:col-span-4 flex flex-col items-center">
+            <label class="w-full aspect-[2.5/3.5] max-w-[170px] rounded-xl bg-[#070714] border-2 border-dashed border-purple-500/45 hover:border-fuchsia-400 transition cursor-pointer flex flex-col items-center justify-center overflow-hidden relative group">
+              <img id="form-image-preview" src="" alt="Preview" class="hidden w-full h-full object-cover" />
+              <div id="form-upload-placeholder" class="p-3 text-center space-y-1.5">
+                <svg class="w-7 h-7 text-amber-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                <span class="block text-[11px] font-semibold text-slate-200">Upload Foto da Carta</span>
+                <span class="block text-[10px] text-slate-400">PNG, JPG ou WEBP</span>
+              </div>
+              <input id="form-image-file" type="file" accept="image/*" onchange="handleImageUpload(event)" class="hidden" />
+            </label>
+            <span class="text-[10px] text-slate-400 mt-1.5 text-center">Clique na moldura para enviar foto</span>
+          </div>
+
+          <!-- Campos Principais -->
+          <div class="sm:col-span-8 space-y-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-300 mb-1">Nome da Carta Pokémon *</label>
+              <input id="form-title" type="text" required placeholder="Ex: Charizard ex 199/165 SIR" class="w-full bg-[#070714] border border-purple-500/30 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-amber-400" />
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Coleção / Set *</label>
+                <input id="form-set" type="text" required placeholder="Ex: Escarlate e Violeta 151" class="w-full bg-[#070714] border border-purple-500/30 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-amber-400" />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Raridade</label>
+                <select id="form-rarity" class="w-full bg-[#070714] border border-purple-500/30 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400">
+                  <option value="Illustration Rare">Illustration Rare (IR)</option>
+                  <option value="Special Illustration Rare">Special Illustration Rare (SIR)</option>
+                  <option value="Ultra Rare / Full Art">Ultra Rare / Full Art</option>
+                  <option value="Hyper Rare (Gold)">Hyper Rare (Gold)</option>
+                  <option value="Holo Rare Vintage">Holo Rare Vintage</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Estado de Conservação</label>
+                <select id="form-condition" class="w-full bg-[#070714] border border-purple-500/30 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400">
+                  <option value="Mint (M)">Mint (M - Perfeita)</option>
+                  <option value="Near Mint (NM)" selected>Near Mint (NM)</option>
+                  <option value="Lightly Played (LP)">Lightly Played (LP)</option>
+                  <option value="Moderately Played (MP)">Moderately Played (MP)</option>
+                  <option value="PSA 10 Gem Mint">Graduada PSA 10</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1">Leiloeiro Responsável</label>
+                <input id="form-seller" type="text" required value="PokeMaster Store" class="w-full bg-[#070714] border border-purple-500/30 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-amber-400" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Horários de Abertura e Fechamento -->
+        <div class="bg-[#070714]/80 border border-purple-500/25 rounded-xl p-3.5">
+          <div class="text-xs font-bold text-slate-200 mb-2.5 flex items-center gap-1.5">
+            <svg class="w-4 h-4 text-fuchsia-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Horário de Abertura e Fechamento do Leilão
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Data e Hora de Abertura *</label>
+              <input id="form-start-time" type="datetime-local" required class="w-full bg-[#0c0b20] border border-purple-500/30 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Data e Hora de Fechamento *</label>
+              <input id="form-end-time" type="datetime-local" required class="w-full bg-[#0c0b20] border border-purple-500/30 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Configuração dos 4 Lances Pré-Destinados -->
+        <div class="bg-amber-500/5 border border-amber-400/30 rounded-xl p-3.5">
+          <div class="flex items-center justify-between mb-2.5">
+            <span class="text-xs font-bold text-amber-300">Configurar os 4 Valores Pré-Definidos de Lance (R$)</span>
+            <span class="text-[10px] text-slate-400">Ex: R$ 30, R$ 40, R$ 50, R$ 80</span>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-1">1º Lance (R$)</label>
+              <input id="form-bid-1" type="number" step="0.01" min="1" required value="30" class="w-full bg-[#070714] border border-purple-500/30 rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-amber-400" />
+            </div>
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-1">2º Lance (R$)</label>
+              <input id="form-bid-2" type="number" step="0.01" min="1" required value="40" class="w-full bg-[#070714] border border-purple-500/30 rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-amber-400" />
+            </div>
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-1">3º Lance (R$)</label>
+              <input id="form-bid-3" type="number" step="0.01" min="1" required value="50" class="w-full bg-[#070714] border border-purple-500/30 rounded-xl px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-amber-400" />
+            </div>
+            <div>
+              <label class="block text-[11px] text-slate-400 mb-1">4º Lance (R$)</label>
+              <input id="form-bid-4" type="number" step="0.01" min="1" required value="80" class="w-full bg-[#070714] border border-purple-500/30 rounded-xl px-3 py-2 text-sm font-bold text-amber-300 focus:outline-none focus:border-amber-400" />
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-2.5 pt-2">
+          <button type="button" onclick="closeFormModal()" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition">
+            Cancelar
+          </button>
+          <button type="submit" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-400 to-fuchsia-500 hover:opacity-95 text-slate-950 text-xs font-extrabold transition shadow-lg shadow-fuchsia-500/20">
+            Salvar Carta no Leilão
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 4: ÁREA RESTRITA (ACESSO LEILOEIRO & ADMIN) ==================== -->
+  <div id="restricted-modal" class="hidden fixed inset-0 z-50 bg-[#050510]/85 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-[#0e0c24] border border-purple-500/40 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl shadow-purple-950/60">
+      <div class="flex items-center justify-between">
+        <div>
+          <span class="text-[10px] font-bold uppercase tracking-wider text-fuchsia-400">Gestão Interna</span>
+          <h3 class="text-base font-extrabold text-white">Área Restrita — Leiloeiro &amp; Admin</h3>
+        </div>
+        <button onclick="closeRestrictedAccessModal()" class="p-1.5 rounded-lg bg-purple-950/70 text-slate-300 hover:text-white">✕</button>
+      </div>
+
+      <p class="text-xs text-slate-300 leading-relaxed">
+        Compradores não precisam de login para dar lances. Selecione abaixo o perfil interno para cadastrar cartas, configurar valores ou gerenciar comissões:
+      </p>
+
+      <div class="space-y-2.5">
+        <button onclick="activateInternalRole('auctioneer')" class="w-full p-3.5 rounded-xl bg-[#070714] hover:bg-purple-950/50 border border-purple-500/30 hover:border-amber-400 transition flex items-center justify-between text-left">
+          <div>
+            <div class="text-xs font-extrabold text-amber-300">Entrar como Leiloeiro / Vendedor</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">Cadastrar cartas, foto, 4 valores e ver contatos dos arrematantes</div>
+          </div>
+          <span class="text-amber-400 font-bold text-sm">→</span>
+        </button>
+
+        <button onclick="activateInternalRole('admin')" class="w-full p-3.5 rounded-xl bg-[#070714] hover:bg-fuchsia-950/40 border border-fuchsia-500/35 hover:border-fuchsia-400 transition flex items-center justify-between text-left">
+          <div>
+            <div class="text-xs font-extrabold text-fuchsia-300">Entrar como Administrador Geral</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">Controle total, taxas percentuais, auditoria +24h e contatos</div>
+          </div>
+          <span class="text-fuchsia-400 font-bold text-sm">→</span>
+        </button>
+      </div>
+
+      <div class="pt-2 border-t border-purple-500/20 flex items-center justify-between">
+        <span class="text-[11px] text-slate-400">Deseja voltar à navegação pública?</span>
+        <button onclick="logoutRestrictedRole(); closeRestrictedAccessModal();" class="text-xs font-bold text-slate-300 hover:text-amber-300 underline">
+          Modo Visitante (Público)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase + Lógica Completa da Aplicação -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+    const BUYER_STORAGE_KEY = "pokebid_tcg_buyer_contact_v1";
+
+    // ==================== GERADOR DE ARTES SVG DE CARTAS POKÉMON ====================
+    function createCardArtSVG({ name, hp, typeColor1, typeColor2, accent, typeLabel, subtitle, number }) {
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 420" width="300" height="420">
+          <defs>
+            <linearGradient id="bg-${number}" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="${typeColor1}"/>
+              <stop offset="100%" stop-color="${typeColor2}"/>
+            </linearGradient>
+            <radialGradient id="orb-${number}" cx="50%" cy="40%" r="55%">
+              <stop offset="0%" stop-color="${accent}" stop-opacity="0.8"/>
+              <stop offset="100%" stop-color="#090818" stop-opacity="0"/>
+            </radialGradient>
+          </defs>
+          <rect width="300" height="420" rx="18" fill="#1e1b4b"/>
+          <rect x="8" y="8" width="284" height="404" rx="14" fill="url(#bg-${number})" stroke="${accent}" stroke-width="3"/>
+          <rect x="20" y="18" width="260" height="28" rx="6" fill="rgba(9,8,24,0.78)"/>
+          <text x="30" y="37" fill="#ffffff" font-family="Inter, sans-serif" font-weight="800" font-size="14">${name}</text>
+          <text x="270" y="37" text-anchor="end" fill="${accent}" font-family="Inter, sans-serif" font-weight="900" font-size="13">${hp}</text>
+
+          <rect x="20" y="54" width="260" height="185" rx="10" fill="#070714" stroke="${accent}" stroke-width="2"/>
+          <circle cx="150" cy="145" r="85" fill="url(#orb-${number})"/>
+          <polygon points="150,78 172,126 224,132 185,168 195,218 150,192 105,218 115,168 76,132 128,126" fill="${accent}" fill-opacity="0.28" stroke="${accent}" stroke-width="2"/>
+          <circle cx="150" cy="148" r="34" fill="rgba(9,8,24,0.88)" stroke="${accent}" stroke-width="2.5"/>
+          <text x="150" y="153" text-anchor="middle" fill="#ffffff" font-family="Inter, sans-serif" font-weight="900" font-size="13">${typeLabel}</text>
+
+          <rect x="20" y="250" width="260" height="118" rx="10" fill="rgba(9,8,24,0.84)" stroke="rgba(236,72,153,0.28)"/>
+          <text x="32" y="274" fill="${accent}" font-family="Inter, sans-serif" font-weight="800" font-size="12">ATAQUE ESPECIAL TCG</text>
+          <text x="32" y="294" fill="#e2e8f0" font-family="Inter, sans-serif" font-size="11">${subtitle}</text>
+          <line x1="32" y1="312" x2="268" y2="312" stroke="rgba(255,255,255,0.14)"/>
+          <text x="32" y="334" fill="#cbd5e1" font-family="Inter, sans-serif" font-size="10">Ilustração Rara • Autenticidade Verificada</text>
+          <text x="32" y="352" fill="#facc15" font-family="Inter, sans-serif" font-weight="700" font-size="10">★★★ Edição de Colecionador</text>
+
+          <text x="24" y="394" fill="#e2e8f0" font-family="Inter, sans-serif" font-weight="700" font-size="10">${number}</text>
+          <text x="276" y="394" text-anchor="end" fill="${accent}" font-family="Inter, sans-serif" font-weight="800" font-size="10">POKÉBID NEON</text>
+        </svg>
+      `;
+      return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+    }
+
+    // ==================== ESTADO INICIAL & DADOS DE DEMONSTRAÇÃO ====================
+    const now = Date.now();
+    const initialAuctions = [
+      {
+        id: "card-gengar-vmax",
+        title: "Gengar VMAX Alt Art 271/264",
+        set: "Golpe Fusão (Fusion Strike)",
+        rarity: "Special Illustration Rare",
+        condition: "Near Mint (NM)",
+        seller: "PokeMaster Store",
+        image: createCardArtSVG({
+          name: "Gengar VMAX",
+          hp: "HP 320",
+          typeColor1: "#581c87",
+          typeColor2: "#1e1b4b",
+          accent: "#f472b6",
+          typeLabel: "FANTASMA",
+          subtitle: "Engolir Gigamax • Ilustração Alternativa",
+          number: "271/264 ALT"
+        }),
+        startTime: now - 1000 * 60 * 35,
+        endTime: now + 1000 * 60 * 42,
+        presetBids: [120, 150, 180, 240],
+        currentBid: 150,
+        highestBidder: "Red_Kanto",
+        highestBidderPhone: "(11) 98765-4321",
+        highestBidderEmail: "red.kanto@pokemail.com",
+        forcedStatus: null,
+        bids: [
+          {
+            bidder: "LucasTCG",
+            phone: "(21) 99123-4567",
+            email: "lucas.tcg@email.com",
+            amount: 120,
+            time: now - 1000 * 60 * 20
+          },
+          {
+            bidder: "Red_Kanto",
+            phone: "(11) 98765-4321",
+            email: "red.kanto@pokemail.com",
+            amount: 150,
+            time: now - 1000 * 60 * 8
+          }
+        ]
+      },
+      {
+        id: "card-umbreon-vmax",
+        title: "Umbreon VMAX Alt Art 215/203",
+        set: "Céus em Evolução",
+        rarity: "Special Illustration Rare",
+        condition: "Mint (M)",
+        seller: "CardVault Brasil",
+        image: createCardArtSVG({
+          name: "Umbreon VMAX",
+          hp: "HP 310",
+          typeColor1: "#311042",
+          typeColor2: "#090818",
+          accent: "#facc15",
+          typeLabel: "NOTURNO",
+          subtitle: "Sinal Lunar • Ilustração Alternativa",
+          number: "215/203 ALT"
+        }),
+        startTime: now - 1000 * 60 * 50,
+        endTime: now + 1000 * 60 * 14,
+        presetBids: [30, 40, 50, 80],
+        currentBid: 40,
+        highestBidder: "MistyCollector",
+        highestBidderPhone: "(31) 99888-7766",
+        highestBidderEmail: "misty.cerulean@email.com",
+        forcedStatus: null,
+        bids: [
+          {
+            bidder: "Brock_Pedra",
+            phone: "(41) 98877-1122",
+            email: "brock.pewter@email.com",
+            amount: 30,
+            time: now - 1000 * 60 * 25
+          },
+          {
+            bidder: "MistyCollector",
+            phone: "(31) 99888-7766",
+            email: "misty.cerulean@email.com",
+            amount: 40,
+            time: now - 1000 * 60 * 5
+          }
+        ]
+      },
+      {
+        id: "card-pikachu-promo",
+        title: "Pikachu Grey Felt Hat 085",
+        set: "SV Black Star Promos",
+        rarity: "Illustration Rare",
+        condition: "PSA 10 Gem Mint",
+        seller: "PokeMaster Store",
+        image: createCardArtSVG({
+          name: "Pikachu Promo",
+          hp: "HP 60",
+          typeColor1: "#713f12",
+          typeColor2: "#2e1065",
+          accent: "#fde047",
+          typeLabel: "ELÉTRICO",
+          subtitle: "Edição Especial Museu • Lacrada",
+          number: "SVP 085"
+        }),
+        startTime: now + 1000 * 60 * 25,
+        endTime: now + 1000 * 60 * 145,
+        presetBids: [80, 100, 130, 175],
+        currentBid: 0,
+        highestBidder: "",
+        highestBidderPhone: "",
+        highestBidderEmail: "",
+        forcedStatus: null,
+        bids: []
+      },
+      {
+        id: "card-mew-ex-sar",
+        title: "Mew ex Special Art Rare 205/165",
+        set: "Escarlate e Violeta — 151",
+        rarity: "Special Illustration Rare",
+        condition: "Near Mint (NM)",
+        seller: "Liga Elite TCG",
+        image: createCardArtSVG({
+          name: "Mew ex SAR",
+          hp: "HP 180",
+          typeColor1: "#831843",
+          typeColor2: "#3b0764",
+          accent: "#f472b6",
+          typeLabel: "PSÍQUICO",
+          subtitle: "Reiniciar • Ilustração Rosa Neon",
+          number: "205/165 SAR"
+        }),
+        startTime: now - 1000 * 60 * 180,
+        endTime: now - 1000 * 60 * 15, // Encerrado há 15 min (visível na vitrine por 24h)
+        presetBids: [50, 70, 90, 120],
+        currentBid: 90,
+        highestBidder: "Cynthia_Sinnoh",
+        highestBidderPhone: "(11) 97744-5522",
+        highestBidderEmail: "cynthia.champion@email.com",
+        forcedStatus: null,
+        bids: [
+          {
+            bidder: "GaryOak",
+            phone: "(19) 99222-3344",
+            email: "gary.oak@email.com",
+            amount: 50,
+            time: now - 1000 * 60 * 120
+          },
+          {
+            bidder: "Cynthia_Sinnoh",
+            phone: "(11) 97744-5522",
+            email: "cynthia.champion@email.com",
+            amount: 90,
+            time: now - 1000 * 60 * 40
+          }
+        ]
+      }
+    ];
+
+    // Estado reativo da aplicação
+    const state = {
+      role: "public", // 'public' (visitante sem login) | 'auctioneer' | 'admin'
+      currentView: "marketplace", // 'marketplace' | 'dashboard'
+      statusFilter: "ALL",
+      adminTab: "ACTIVE", // 'ACTIVE' (na vitrine) | 'ARCHIVED' (encerrados > 24h)
+      platformFeePercent: 10,
+      auctions: [...initialAuctions],
+      selectedAuctionId: null,
+      pendingBid: null, // { auctionId, amount } aguardando contato
+      uploadedImageBase64: "",
+      firebaseEnabled: false,
+      user: null
+    };
+
+    let db = null;
+    let auth = null;
+    let appId = "pokebid-tcg-default";
+    let salesChart = null;
+
+    // ==================== INICIALIZAÇÃO FIREBASE (OPCIONAL COM FALLBACK LOCAL) ====================
+    async function initFirebaseIfAvailable() {
+      try {
+        if (typeof __firebase_config !== "undefined" && __firebase_config) {
+          const firebaseConfig = JSON.parse(__firebase_config);
+          appId = typeof __app_id !== "undefined" ? __app_id : "pokebid-tcg-default";
+          const app = initializeApp(firebaseConfig);
+          auth = getAuth(app);
+          db = getFirestore(app);
+
+          if (typeof __initial_auth_token !== "undefined" && __initial_auth_token) {
+            await signInWithCustomToken(auth, __initial_auth_token);
+          } else {
+            await signInAnonymously(auth);
+          }
+
+          onAuthStateChanged(auth, (user) => {
+            if (user) {
+              state.user = user;
+              state.firebaseEnabled = true;
+              document.getElementById("sync-status-text").textContent = "Vitrine Aberta • Tempo Real (Nuvem)";
+              subscribeToFirestoreData();
+            }
+          });
+        }
+      } catch (err) {
+        console.warn("Executando em modo local interativo:", err);
+      }
+    }
+
+    function subscribeToFirestoreData() {
+      if (!db || !state.user) return;
+      const auctionsCol = collection(db, "artifacts", appId, "public", "data", "poke_auctions");
+      onSnapshot(
+        auctionsCol,
+        async (snapshot) => {
+          if (snapshot.empty) {
+            for (const item of initialAuctions) {
+              await setDoc(doc(db, "artifacts", appId, "public", "data", "poke_auctions", item.id), item);
+            }
+          } else {
+            const loaded = [];
+            snapshot.forEach((docSnap) => loaded.push({ id: docSnap.id, ...docSnap.data() }));
+            loaded.sort((a, b) => b.endTime - a.endTime);
+            state.auctions = loaded;
+            refreshAllViews();
+          }
+        },
+        (error) => {
+          console.error("Erro na sincronização:", error);
+        }
+      );
+
+      const settingsDoc = doc(db, "artifacts", appId, "public", "data", "poke_settings", "global");
+      onSnapshot(
+        settingsDoc,
+        (docSnap) => {
+          if (docSnap.exists() && typeof docSnap.data().platformFeePercent === "number") {
+            state.platformFeePercent = docSnap.data().platformFeePercent;
+            syncFeeUI();
+            refreshAllViews();
+          }
+        },
+        (err) => console.error(err)
+      );
+    }
+
+    async function persistAuction(auctionObj) {
+      if (state.firebaseEnabled && db && state.user) {
+        await setDoc(doc(db, "artifacts", appId, "public", "data", "poke_auctions", auctionObj.id), auctionObj);
+      }
+    }
+
+    async function removeAuctionFromCloud(auctionId) {
+      if (state.firebaseEnabled && db && state.user) {
+        await deleteDoc(doc(db, "artifacts", appId, "public", "data", "poke_auctions", auctionId));
+      }
+    }
+
+    async function persistPlatformFee(fee) {
+      if (state.firebaseEnabled && db && state.user) {
+        await setDoc(
+          doc(db, "artifacts", appId, "public", "data", "poke_settings", "global"),
+          { platformFeePercent: fee },
+          { merge: true }
+        );
+      }
+    }
+
+    // ==================== UTILITÁRIOS DE FORMATAÇÃO, STATUS E EXPIRAÇÃO 24H ====================
+    function formatBRL(value) {
+      return Number(value || 0).toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL"
+      });
+    }
+
+    function getAuctionStatus(auction, currentTs = Date.now()) {
+      if (auction.forcedStatus === "ENDED") return "ENDED";
+      if (auction.forcedStatus === "LIVE") return "LIVE";
+      if (currentTs < auction.startTime) return "SCHEDULED";
+      if (currentTs >= auction.endTime) return "ENDED";
+      return "LIVE";
+    }
+
+    // Regra de limpeza automática 24h após o encerramento
+    function isArchivedOver24h(auction, currentTs = Date.now()) {
+      const status = getAuctionStatus(auction, currentTs);
+      if (status !== "ENDED") return false;
+      const closedAt = auction.closedTimestamp || auction.endTime;
+      return currentTs - closedAt >= TWENTY_FOUR_HOURS_MS;
+    }
+
+    function formatCountdown(ms) {
+      if (ms <= 0) return "00:00:00";
+      const totalSeconds = Math.floor(ms / 1000);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+    }
+
+    function formatShortDateTime(ts) {
+      const d = new Date(ts);
+      return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function toDatetimeLocalValue(ts) {
+      const d = new Date(ts);
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function showToast(title, message, type = "success") {
+      const container = document.getElementById("toast-container");
+      const colors = {
+        success: "border-emerald-500/45 bg-[#0e0c24]/95 text-emerald-300",
+        warning: "border-amber-400/50 bg-[#0e0c24]/95 text-amber-300",
+        info: "border-fuchsia-500/45 bg-[#0e0c24]/95 text-fuchsia-300"
+      };
+      const el = document.createElement("div");
+      el.className = `pointer-events-auto border rounded-xl p-3.5 shadow-xl backdrop-blur-md transition-all ${colors[type] || colors.info}`;
+      el.innerHTML = `
+        <div class="text-xs font-extrabold">${title}</div>
+        <div class="text-[11px] text-slate-300 mt-0.5">${message}</div>
+      `;
+      container.appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = "0";
+        setTimeout(() => el.remove(), 300);
+      }, 3800);
+    }
+
+    // ==================== ÁREA RESTRITA (LEILOEIRO & ADMIN) VS VISITANTE PÚBLICO ====================
+    window.openRestrictedAccessModal = function () {
+      document.getElementById("restricted-modal").classList.remove("hidden");
+    };
+
+    window.closeRestrictedAccessModal = function () {
+      document.getElementById("restricted-modal").classList.add("hidden");
+    };
+
+    window.activateInternalRole = function (role) {
+      state.role = role;
+      const navDash = document.getElementById("nav-dashboard");
+      const quickNewBtn = document.getElementById("quick-new-card-btn");
+      const accessTitle = document.getElementById("header-access-title");
+      const accessSub = document.getElementById("header-access-subtitle");
+
+      navDash.classList.remove("hidden");
+      quickNewBtn.classList.remove("hidden");
+
+      if (role === "auctioneer") {
+        accessTitle.textContent = "Perfil: Leiloeiro";
+        accessSub.textContent = "Trocar perfil ou sair";
+        navDash.textContent = "Painel do Leiloeiro";
+      } else {
+        accessTitle.textContent = "Perfil: Administrador";
+        accessSub.textContent = "Trocar perfil ou sair";
+        navDash.textContent = "Painel Admin";
+      }
+
+      closeRestrictedAccessModal();
+      switchMainView("dashboard");
+      showToast(
+        role === "admin" ? "Acesso Administrador Ativado" : "Acesso Leiloeiro Ativado",
+        "Agora você pode cadastrar cartas, ver contatos dos arrematantes e auditar lotes.",
+        "info"
+      );
+    };
+
+    window.logoutRestrictedRole = function () {
+      state.role = "public";
+      document.getElementById("nav-dashboard").classList.add("hidden");
+      document.getElementById("quick-new-card-btn").classList.add("hidden");
+      document.getElementById("header-access-title").textContent = "Área Restrita";
+      document.getElementById("header-access-subtitle").textContent = "Acesso Leiloeiro & Admin";
+      switchMainView("marketplace");
+      showToast("Modo Visitante Ativo", "Você retornou à vitrine pública de compradores.", "info");
+    };
+
+    window.switchMainView = function (viewName) {
+      state.currentView = viewName;
+      const marketEl = document.getElementById("view-marketplace");
+      const dashEl = document.getElementById("view-dashboard");
+      const navMarket = document.getElementById("nav-marketplace");
+      const navDash = document.getElementById("nav-dashboard");
+
+      if (viewName === "marketplace") {
+        marketEl.classList.remove("hidden");
+        dashEl.classList.add("hidden");
+        navMarket.className = "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition bg-purple-950/70 text-white border border-purple-500/40";
+        if (state.role !== "public") {
+          navDash.className = "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40 hover:bg-fuchsia-500/30";
+        }
+        renderAuctionGrid();
+      } else {
+        marketEl.classList.add("hidden");
+        dashEl.classList.remove("hidden");
+        navMarket.className = "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition bg-[#0c0b20] text-slate-400 border border-purple-500/25 hover:text-white";
+        navDash.className = "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition bg-gradient-to-r from-amber-400 to-fuchsia-500 text-slate-950 shadow-lg shadow-fuchsia-500/20";
+        renderDashboard();
+      }
+    };
+
+    // ==================== VITRINE PÚBLICA & LIMPEZA AUTOMÁTICA 24H ====================
+    window.setStatusFilter = function (filter) {
+      state.statusFilter = filter;
+      document.querySelectorAll(".filter-chip").forEach((chip) => {
+        if (chip.dataset.filter === filter) {
+          chip.className = "filter-chip px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 transition";
+        } else {
+          chip.className = "filter-chip px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-purple-950/60 text-slate-200 hover:bg-purple-900/70 border border-purple-500/20 transition";
+        }
+      });
+      renderAuctionGrid();
+    };
+
+    window.renderAuctionGrid = function () {
+      const grid = document.getElementById("auction-grid");
+      const queryText = (document.getElementById("search-input")?.value || "").toLowerCase().trim();
+      const nowTs = Date.now();
+
+      // Filtra fora da vitrine pública qualquer leilão encerrado há mais de 24h
+      const publicVisibleAuctions = state.auctions.filter((a) => !isArchivedOver24h(a, nowTs));
+
+      let liveCount = 0;
+      let scheduledCount = 0;
+      let endedRecentCount = 0;
+
+      publicVisibleAuctions.forEach((a) => {
+        const st = getAuctionStatus(a, nowTs);
+        if (st === "LIVE") liveCount++;
+        else if (st === "SCHEDULED") scheduledCount++;
+        else endedRecentCount++;
+      });
+
+      document.getElementById("stat-live-count").textContent = liveCount;
+      document.getElementById("stat-scheduled-count").textContent = scheduledCount;
+      document.getElementById("stat-ended-count").textContent = endedRecentCount;
+
+      const filtered = publicVisibleAuctions.filter((item) => {
+        const st = getAuctionStatus(item, nowTs);
+        if (state.statusFilter !== "ALL" && st !== state.statusFilter) return false;
+        if (queryText) {
+          const hay = `${item.title} ${item.set} ${item.rarity} ${item.seller}`.toLowerCase();
+          if (!hay.includes(queryText)) return false;
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        grid.innerHTML = `
+          <div class="col-span-full bg-[#0d0b22]/85 border border-purple-500/25 rounded-2xl p-10 text-center">
+            <p class="text-sm font-bold text-slate-200">Nenhuma carta ativa nesta visualização.</p>
+            <p class="text-xs text-slate-400 mt-1">Lotes encerrados há mais de 24h são movidos automaticamente para o arquivo administrativo.</p>
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = filtered
+        .map((auction) => {
+          const status = getAuctionStatus(auction, nowTs);
+          const isLive = status === "LIVE";
+          const isScheduled = status === "SCHEDULED";
+
+          const statusBadge = isLive
+            ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-fuchsia-500/20 text-fuchsia-200 border border-fuchsia-500/45"><span class="w-1.5 h-1.5 rounded-full bg-fuchsia-400 animate-ping"></span>AO VIVO</span>`
+            : isScheduled
+            ? `<span class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-500/25 text-purple-200 border border-purple-400/40">AGENDADO</span>`
+            : `<span class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-800/90 text-slate-300 border border-slate-600">ENCERRADO</span>`;
+
+          const timerText = isLive
+            ? formatCountdown(auction.endTime - nowTs)
+            : isScheduled
+            ? `Abre em ${formatCountdown(auction.startTime - nowTs)}`
+            : "Sai em <24h";
+
+          // Botões rápidos dos 4 lances pré-definidos diretamente no card
+          const quickButtonsHtml = auction.presetBids
+            .map((val, idx) => {
+              const disabled = !isLive || val <= auction.currentBid;
+              return `
+                <button
+                  onclick="event.stopPropagation(); initiatePresetBid('${auction.id}', ${val})"
+                  ${disabled ? "disabled" : ""}
+                  class="py-1.5 px-2 rounded-lg text-[11px] font-extrabold transition border ${
+                    disabled
+                      ? "bg-[#070714]/70 border-slate-800/80 text-slate-600 cursor-not-allowed line-through"
+                      : "bg-purple-950/60 hover:bg-gradient-to-r hover:from-amber-400 hover:to-fuchsia-500 hover:text-slate-950 border-purple-500/35 hover:border-amber-300 text-amber-300"
+                  }"
+                  title="Patamar ${idx + 1}: ${formatBRL(val)}"
+                >
+                  ${formatBRL(val)}
+                </button>
+              `;
+            })
+            .join("");
+
+          return `
+            <article onclick="openBidModal('${auction.id}')" class="group bg-[#0d0b22]/95 hover:bg-[#120f2e] border border-purple-500/25 hover:border-fuchsia-500/55 rounded-2xl overflow-hidden transition-all duration-300 flex flex-col justify-between cursor-pointer shadow-lg hover:shadow-fuchsia-500/15">
+              <div>
+                <!-- Topo do Card: Imagem da Carta -->
+                <div class="relative bg-[#070714] p-4 flex items-center justify-center border-b border-purple-500/20 tcg-card-shine">
+                  <div class="absolute top-3 left-3 z-10">${statusBadge}</div>
+                  <div class="absolute top-3 right-3 z-10 px-2 py-0.5 rounded-md bg-[#0e0c24]/95 border border-purple-500/35 text-[10px] font-semibold text-amber-300">
+                    ${auction.condition}
+                  </div>
+                  <img
+                    src="${auction.image}"
+                    alt="${auction.title}"
+                    class="w-40 h-56 object-cover rounded-xl shadow-xl group-hover:scale-[1.03] transition-transform duration-300"
+                  />
+                </div>
+
+                <!-- Informações da Carta -->
+                <div class="p-4 space-y-3">
+                  <div>
+                    <div class="text-[11px] text-fuchsia-300 font-semibold truncate">${auction.set}</div>
+                    <h3 class="text-base font-extrabold text-white group-hover:text-amber-300 transition truncate mt-0.5">${auction.title}</h3>
+                    <div class="text-[11px] text-slate-400 mt-0.5">Leiloeiro: <span class="text-slate-200 font-medium">${auction.seller}</span></div>
+                  </div>
+
+                  <!-- Lance Atual & Cronômetro -->
+                  <div class="flex items-center justify-between bg-[#070714] border border-purple-500/25 rounded-xl p-2.5">
+                    <div>
+                      <div class="text-[10px] text-slate-400 uppercase font-semibold">${auction.currentBid > 0 ? "Lance Atual" : "Lance Inicial"}</div>
+                      <div class="text-lg font-black ${auction.currentBid > 0 ? "text-amber-400" : "text-slate-200"}">
+                        ${auction.currentBid > 0 ? formatBRL(auction.currentBid) : formatBRL(auction.presetBids[0])}
+                      </div>
+                      <div class="text-[10px] text-slate-400 truncate max-w-[125px]">
+                        ${auction.highestBidder ? `Líder: <strong class="text-fuchsia-300">${auction.highestBidder}</strong>` : "Aguardando 1º lance"}
+                      </div>
+                    </div>
+                    <div class="text-right">
+                      <div class="text-[10px] text-slate-400 uppercase font-semibold">${isLive ? "Tempo Restante" : "Status"}</div>
+                      <div data-countdown-id="${auction.id}" class="text-sm font-mono font-extrabold ${isLive ? "text-fuchsia-400" : "text-slate-300"} mt-0.5">
+                        ${timerText}
+                      </div>
+                      <div class="text-[10px] text-slate-500 mt-0.5">
+                        ${formatShortDateTime(auction.startTime)} - ${formatShortDateTime(auction.endTime)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 4 Botões de Lance Pré-Destinados -->
+                  <div>
+                    <div class="flex items-center justify-between text-[10px] text-slate-400 font-semibold mb-1.5">
+                      <span>Clique para Dar Lance</span>
+                      <span class="text-purple-300">${auction.bids.length} lance(s)</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1.5">
+                      ${quickButtonsHtml}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="px-4 pb-4">
+                <button class="w-full py-2 rounded-xl bg-purple-950/70 group-hover:bg-gradient-to-r group-hover:from-amber-400 group-hover:to-fuchsia-500 text-slate-200 group-hover:text-slate-950 border border-purple-500/30 group-hover:border-transparent text-xs font-extrabold transition">
+                  ${isLive ? "Abrir Carta & Ofertar" : "Ver Detalhes do Lote"}
+                </button>
+              </div>
+            </article>
+          `;
+        })
+        .join("");
+    };
+
+    // ==================== FLUXO DE LANCE COM CAPTURA OBRIGATÓRIA DE CONTATO ====================
+    window.applyPhoneMask = function (input) {
+      let digits = input.value.replace(/\D/g, "").slice(0, 11);
+      if (digits.length > 6) {
+        input.value = `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+      } else if (digits.length > 2) {
+        input.value = `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+      } else if (digits.length > 0) {
+        input.value = `(${digits}`;
+      }
+    };
+
+    function getSavedBuyerContact() {
+      try {
+        const raw = localStorage.getItem(BUYER_STORAGE_KEY);
+        return raw ? JSON.parse(raw) : { name: "", phone: "", email: "" };
+      } catch {
+        return { name: "", phone: "", email: "" };
+      }
+    }
+
+    function saveBuyerContact(contact) {
+      try {
+        localStorage.setItem(BUYER_STORAGE_KEY, JSON.stringify(contact));
+      } catch {
+        // Ignora caso storage esteja bloqueado
+      }
+    }
+
+    // Abre o modal rápido solicitando Nome, Telefone (WhatsApp) e E-mail
+    window.initiatePresetBid = function (auctionId, amount) {
+      const auction = state.auctions.find((a) => a.id === auctionId);
+      if (!auction) return;
+
+      const status = getAuctionStatus(auction);
+      if (status !== "LIVE") {
+        showToast("Leilão Indisponível", "Este lote não está aberto para lances no momento.", "warning");
+        return;
+      }
+
+      if (amount <= auction.currentBid) {
+        showToast("Lance Superado", `Escolha um valor maior que ${formatBRL(auction.currentBid)}.`, "warning");
+        return;
+      }
+
+      state.pendingBid = { auctionId, amount: Number(amount) };
+
+      document.getElementById("contact-modal-card-title").textContent = auction.title;
+      document.getElementById("contact-modal-bid-value").textContent = formatBRL(amount);
+
+      const saved = getSavedBuyerContact();
+      document.getElementById("bidder-name-input").value = saved.name || "";
+      document.getElementById("bidder-phone-input").value = saved.phone || "";
+      document.getElementById("bidder-email-input").value = saved.email || "";
+
+      document.getElementById("contact-bid-modal").classList.remove("hidden");
+    };
+
+    window.closeContactBidModal = function () {
+      state.pendingBid = null;
+      document.getElementById("contact-bid-modal").classList.add("hidden");
+    };
+
+    window.submitConfirmedBidWithContact = async function (event) {
+      event.preventDefault();
+      if (!state.pendingBid) return;
+
+      const name = document.getElementById("bidder-name-input").value.trim();
+      const phone = document.getElementById("bidder-phone-input").value.trim();
+      const email = document.getElementById("bidder-email-input").value.trim();
+
+      const phoneDigits = phone.replace(/\D/g, "");
+      if (phoneDigits.length < 10) {
+        showToast("Telefone Incompleto", "Informe um número de WhatsApp válido com DDD.", "warning");
+        return;
+      }
+
+      saveBuyerContact({ name, phone, email });
+
+      const { auctionId, amount } = state.pendingBid;
+      closeContactBidModal();
+      await commitBidToAuction(auctionId, amount, { name, phone, email });
+    };
+
+    async function commitBidToAuction(auctionId, amount, contact) {
+      const auction = state.auctions.find((a) => a.id === auctionId);
+      if (!auction) return;
+
+      if (getAuctionStatus(auction) !== "LIVE") {
+        showToast("Leilão Encerrado", "O tempo deste lote acabou antes da confirmação.", "warning");
+        return;
+      }
+
+      if (amount <= auction.currentBid) {
+        showToast("Lance Já Superado", `Outro participante ofertou ${formatBRL(auction.currentBid)} antes.`, "warning");
+        return;
+      }
+
+      const bidRecord = {
+        bidder: contact.name,
+        phone: contact.phone,
+        email: contact.email,
+        amount: Number(amount),
+        time: Date.now()
+      };
+
+      auction.currentBid = Number(amount);
+      auction.highestBidder = contact.name;
+      auction.highestBidderPhone = contact.phone;
+      auction.highestBidderEmail = contact.email;
+      auction.bids = [bidRecord, ...(auction.bids || [])];
+
+      await persistAuction(auction);
+      refreshAllViews();
+
+      showToast(
+        `Lance Confirmado: ${formatBRL(amount)}!`,
+        `${contact.name}, seu contato foi vinculado à liderança de ${auction.title}.`,
+        "success"
+      );
+    }
+
+    // ==================== SIMULAÇÕES DE CONCORRENTE & LIMPEZA +24H ====================
+    window.simulateCompetitorBid = function () {
+      const liveAuctions = state.auctions.filter((a) => getAuctionStatus(a) === "LIVE");
+      if (liveAuctions.length === 0) {
+        showToast("Sem Leilões Ao Vivo", "Abra um leilão para simular disputas.", "warning");
+        return;
+      }
+      const target = liveAuctions[Math.floor(Math.random() * liveAuctions.length)];
+      const nextValidBid = target.presetBids.find((v) => v > target.currentBid);
+      if (!nextValidBid) {
+        showToast("Teto Atingido", `A carta ${target.title} já atingiu o 4º patamar máximo (${formatBRL(target.currentBid)}).`, "info");
+        return;
+      }
+      const rivals = [
+        { name: "Gary_Pallet", phone: "(11) 99444-1010", email: "gary.pallet@pokemail.com" },
+        { name: "Lance_Dragon", phone: "(21) 98333-2020", email: "lance.indigo@pokemail.com" },
+        { name: "N_Unova", phone: "(31) 99555-3030", email: "n.harmonia@pokemail.com" },
+        { name: "Dawn_Sinnoh", phone: "(41) 98666-4040", email: "dawn.twinleaf@pokemail.com" }
+      ];
+      const rival = rivals[Math.floor(Math.random() * rivals.length)];
+      commitBidToAuction(target.id, nextValidBid, rival);
+    };
+
+    window.simulate24hCleanup = async function () {
+      const nowTs = Date.now();
+      const endedVisible = state.auctions.filter(
+        (a) => getAuctionStatus(a, nowTs) === "ENDED" && !isArchivedOver24h(a, nowTs)
+      );
+
+      if (endedVisible.length === 0) {
+        showToast(
+          "Nenhum Lote Encerrado Visível",
+          "Encerre um leilão no painel ou aguarde um lote finalizar para simular o avanço de +24h.",
+          "warning"
+        );
+        return;
+      }
+
+      for (const item of endedVisible) {
+        item.endTime = nowTs - TWENTY_FOUR_HOURS_MS - 60000;
+        item.closedTimestamp = item.endTime;
+        await persistAuction(item);
+      }
+
+      refreshAllViews();
+      showToast(
+        "Limpeza +24h Aplicada!",
+        `${endedVisible.length} leilão(ões) encerrado(s) foram ocultados da vitrine e movidos para 'Arquivados (+24h)' no painel.`,
+        "info"
+      );
+    };
+
+    // ==================== MODAL DE SALA DE LEILÃO ====================
+    window.openBidModal = function (auctionId) {
+      state.selectedAuctionId = auctionId;
+      renderBidModalContent();
+      document.getElementById("bid-modal").classList.remove("hidden");
+    };
+
+    window.closeBidModal = function () {
+      state.selectedAuctionId = null;
+      document.getElementById("bid-modal").classList.add("hidden");
+    };
+
+    function renderBidModalContent() {
+      if (!state.selectedAuctionId) return;
+      const auction = state.auctions.find((a) => a.id === state.selectedAuctionId);
+      if (!auction) return;
+
+      const nowTs = Date.now();
+      const status = getAuctionStatus(auction, nowTs);
+      const isLive = status === "LIVE";
+      const isScheduled = status === "SCHEDULED";
+
+      const badge = document.getElementById("modal-status-badge");
+      if (isLive) {
+        badge.textContent = "AO VIVO";
+        badge.className = "px-2.5 py-1 rounded-full text-xs font-bold bg-fuchsia-500/20 text-fuchsia-200 border border-fuchsia-500/45";
+      } else if (isScheduled) {
+        badge.textContent = "AGENDADO";
+        badge.className = "px-2.5 py-1 rounded-full text-xs font-bold bg-purple-500/25 text-purple-200 border border-purple-400/40";
+      } else {
+        badge.textContent = "ENCERRADO";
+        badge.className = "px-2.5 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-300";
+      }
+
+      document.getElementById("modal-set-info").textContent = `${auction.set} • ${auction.rarity}`;
+      document.getElementById("modal-card-image").src = auction.image;
+      document.getElementById("modal-condition").textContent = auction.condition;
+      document.getElementById("modal-seller").textContent = auction.seller;
+      document.getElementById("modal-card-title").textContent = auction.title;
+
+      document.getElementById("modal-current-bid").textContent =
+        auction.currentBid > 0 ? formatBRL(auction.currentBid) : "Sem lances";
+      document.getElementById("modal-highest-bidder").textContent = auction.highestBidder
+        ? `${status === "ENDED" ? "Arrematado por" : "Líder atual"}: ${auction.highestBidder}`
+        : `1º lance sugerido: ${formatBRL(auction.presetBids[0])}`;
+
+      document.getElementById("modal-timer-label").textContent = isLive
+        ? "Encerra em"
+        : isScheduled
+        ? "Abre em"
+        : "Status do Leilão";
+      document.getElementById("modal-countdown").textContent = isLive
+        ? formatCountdown(auction.endTime - nowTs)
+        : isScheduled
+        ? formatCountdown(auction.startTime - nowTs)
+        : "FINALIZADO";
+      document.getElementById("modal-schedule-window").textContent = `Janela: ${formatShortDateTime(
+        auction.startTime
+      )} até ${formatShortDateTime(auction.endTime)}`;
+
+      // Renderiza os 4 botões grandes de lances pré-definidos
+      const presetContainer = document.getElementById("modal-preset-buttons");
+      presetContainer.innerHTML = auction.presetBids
+        .map((val, idx) => {
+          const isBlocked = !isLive || val <= auction.currentBid;
+          return `
+            <button
+              onclick="initiatePresetBid('${auction.id}', ${val})"
+              ${isBlocked ? "disabled" : ""}
+              class="p-3 rounded-xl border text-left transition flex items-center justify-between ${
+                isBlocked
+                  ? "bg-[#070714]/70 border-slate-800 text-slate-600 cursor-not-allowed"
+                  : "bg-gradient-to-r from-purple-950/75 to-[#1b1138] hover:from-amber-400 hover:to-fuchsia-500 border-purple-500/40 text-white hover:text-slate-950 shadow-md group"
+              }"
+            >
+              <div>
+                <div class="text-[10px] uppercase font-bold ${isBlocked ? "text-slate-600" : "text-amber-300 group-hover:text-slate-900"}">
+                  Lance ${idx + 1}
+                </div>
+                <div class="text-base font-black">${formatBRL(val)}</div>
+              </div>
+              <span class="text-xs font-bold px-2 py-1 rounded-lg ${
+                isBlocked ? "bg-slate-900 text-slate-600" : "bg-fuchsia-500/20 text-fuchsia-200 group-hover:bg-slate-950/15 group-hover:text-slate-950"
+              }">
+                ${val <= auction.currentBid ? "Superado" : isLive ? "Ofertar" : "Aguarde"}
+              </span>
+            </button>
+          `;
+        })
+        .join("");
+
+      // Histórico público de lances (oculta telefone/e-mail na vitrine pública por privacidade)
+      document.getElementById("modal-bid-count").textContent = `${auction.bids.length} lance(s)`;
+      const historyEl = document.getElementById("modal-bid-history");
+      if (auction.bids.length === 0) {
+        historyEl.innerHTML = `<div class="text-xs text-slate-500 py-3 text-center">Nenhum lance registrado ainda. Seja o primeiro!</div>`;
+      } else {
+        historyEl.innerHTML = auction.bids
+          .map(
+            (b, i) => `
+            <div class="flex items-center justify-between px-3 py-2 rounded-lg ${
+              i === 0 ? "bg-fuchsia-500/15 border border-fuchsia-500/35" : "bg-[#0c0b20]"
+            }">
+              <div class="flex items-center gap-2">
+                <span class="w-5 h-5 rounded-full bg-purple-950 text-[10px] font-bold flex items-center justify-center text-amber-300">
+                  ${i === 0 ? "👑" : i + 1}
+                </span>
+                <div>
+                  <div class="text-xs font-bold ${i === 0 ? "text-amber-300" : "text-slate-200"}">${b.bidder}</div>
+                  <div class="text-[10px] text-slate-500">${formatShortDateTime(b.time)}</div>
+                </div>
+              </div>
+              <div class="text-xs font-extrabold ${i === 0 ? "text-fuchsia-300" : "text-slate-300"}">
+                ${formatBRL(b.amount)}
+              </div>
+            </div>
+          `
+          )
+          .join("");
+      }
+    }
+
+    // ==================== PAINEL ADMINISTRATIVO, CONTATOS & ARQUIVADOS (+24H) ====================
+    function syncFeeUI() {
+      const fee = state.platformFeePercent;
+      document.getElementById("fee-slider-label").textContent = `${fee}%`;
+      document.getElementById("platform-fee-input").value = fee;
+      document.getElementById("readonly-fee-val").textContent = `${fee}%`;
+      document.getElementById("readonly-net-val").textContent = `${100 - fee}%`;
+    }
+
+    window.handleFeeChange = async function (val) {
+      state.platformFeePercent = Number(val);
+      syncFeeUI();
+      await persistPlatformFee(state.platformFeePercent);
+      renderDashboard();
+    };
+
+    window.setAdminTab = function (tab) {
+      state.adminTab = tab;
+      const activeBtn = document.getElementById("tab-admin-active");
+      const archivedBtn = document.getElementById("tab-admin-archived");
+
+      if (tab === "ACTIVE") {
+        activeBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 transition";
+        archivedBtn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition flex items-center gap-1.5";
+      } else {
+        activeBtn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition";
+        archivedBtn.className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-fuchsia-500 to-purple-600 text-white transition flex items-center gap-1.5";
+      }
+      renderDashboard();
+    };
+
+    function renderDashboard() {
+      const isAdmin = state.role === "admin";
+      const nowTs = Date.now();
+
+      document.getElementById("dashboard-badge").textContent = isAdmin
+        ? "Painel Administrativo Geral"
+        : "Painel do Leiloeiro";
+      document.getElementById("dashboard-title").textContent = isAdmin
+        ? "Gestão Global, Contatos dos Vencedores & Porcentagens"
+        : "Minhas Cartas Leiloadas, Contatos & Repasses";
+
+      document.getElementById("admin-fee-controls").classList.toggle("hidden", !isAdmin);
+      document.getElementById("auctioneer-fee-readonly").classList.toggle("hidden", isAdmin);
+
+      // Cálculo de métricas financeiras e porcentagens (sobre todo o histórico)
+      const feeRate = state.platformFeePercent / 100;
+      const activeSales = state.auctions.filter((a) => a.currentBid > 0);
+      const totalVolume = activeSales.reduce((acc, a) => acc + Number(a.currentBid || 0), 0);
+      const platformRevenue = totalVolume * feeRate;
+      const sellerPayout = totalVolume - platformRevenue;
+      const conversionRate =
+        state.auctions.length > 0 ? Math.round((activeSales.length / state.auctions.length) * 100) : 0;
+
+      document.getElementById("kpi-total-volume").textContent = formatBRL(totalVolume);
+      document.getElementById("kpi-total-sub").textContent = `${activeSales.length} de ${state.auctions.length} cartas receberam lances`;
+
+      document.getElementById("kpi-platform-pct").textContent = `${state.platformFeePercent}%`;
+      document.getElementById("kpi-platform-revenue").textContent = formatBRL(platformRevenue);
+
+      document.getElementById("kpi-seller-pct").textContent = `${100 - state.platformFeePercent}%`;
+      document.getElementById("kpi-seller-payout").textContent = formatBRL(sellerPayout);
+
+      document.getElementById("kpi-conversion-badge").textContent = `${conversionRate}%`;
+      document.getElementById("kpi-conversion-rate").textContent = `${conversionRate}%`;
+      document.getElementById("kpi-conversion-sub").textContent = `${activeSales.length} com lance / ${
+        state.auctions.length - activeSales.length
+      } sem lances`;
+
+      // Agrupamento por leiloeiro para porcentagens
+      const sellerMap = {};
+      state.auctions.forEach((a) => {
+        const sName = a.seller || "Leiloeiro Padrão";
+        if (!sellerMap[sName]) sellerMap[sName] = { volume: 0, count: 0 };
+        sellerMap[sName].volume += Number(a.currentBid || 0);
+        sellerMap[sName].count += 1;
+      });
+
+      const sellerEntries = Object.entries(sellerMap).sort((a, b) => b[1].volume - a[1].volume);
+      const breakdownEl = document.getElementById("seller-breakdown-list");
+      breakdownEl.innerHTML = sellerEntries
+        .map(([seller, info]) => {
+          const sharePct = totalVolume > 0 ? ((info.volume / totalVolume) * 100).toFixed(1) : "0.0";
+          const netVal = info.volume * (1 - feeRate);
+          return `
+            <div class="bg-[#070714] border border-purple-500/25 rounded-xl p-3">
+              <div class="flex items-center justify-between text-xs mb-1">
+                <span class="font-bold text-slate-200">${seller} <span class="text-slate-500 font-normal">(${info.count} lotes)</span></span>
+                <span class="font-extrabold text-amber-400">${sharePct}%</span>
+              </div>
+              <div class="w-full h-2 rounded-full bg-purple-950/70 overflow-hidden">
+                <div class="h-full bg-gradient-to-r from-amber-400 via-fuchsia-500 to-purple-500 rounded-full" style="width: ${sharePct}%"></div>
+              </div>
+              <div class="flex justify-between text-[11px] text-slate-400 mt-1.5">
+                <span>Bruto: <strong class="text-slate-200">${formatBRL(info.volume)}</strong></span>
+                <span>Líquido (${100 - state.platformFeePercent}%): <strong class="text-fuchsia-300">${formatBRL(netVal)}</strong></span>
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+
+      // Barras de status percentual
+      const total = state.auctions.length || 1;
+      const archivedItems = state.auctions.filter((a) => isArchivedOver24h(a, nowTs));
+      const visibleItems = state.auctions.filter((a) => !isArchivedOver24h(a, nowTs));
+
+      document.getElementById("archived-count-badge").textContent = archivedItems.length;
+
+      const livePct = Math.round((visibleItems.filter((a) => getAuctionStatus(a, nowTs) === "LIVE").length / total) * 100);
+      const schedPct = Math.round((visibleItems.filter((a) => getAuctionStatus(a, nowTs) === "SCHEDULED").length / total) * 100);
+      const archPct = Math.round((archivedItems.length / total) * 100);
+
+      document.getElementById("status-percentage-bars").innerHTML = `
+        <div>
+          <div class="flex justify-between text-[11px] mb-1"><span class="text-amber-400 font-semibold">Ao Vivo na Vitrine</span><span>${livePct}%</span></div>
+          <div class="w-full h-1.5 bg-purple-950 rounded-full"><div class="h-full bg-amber-400 rounded-full" style="width:${livePct}%"></div></div>
+        </div>
+        <div>
+          <div class="flex justify-between text-[11px] mb-1"><span class="text-purple-400 font-semibold">Agendados</span><span>${schedPct}%</span></div>
+          <div class="w-full h-1.5 bg-purple-950 rounded-full"><div class="h-full bg-purple-400 rounded-full" style="width:${schedPct}%"></div></div>
+        </div>
+        <div>
+          <div class="flex justify-between text-[11px] mb-1"><span class="text-fuchsia-400 font-semibold">Arquivados (+24h)</span><span>${archPct}%</span></div>
+          <div class="w-full h-1.5 bg-purple-950 rounded-full"><div class="h-full bg-fuchsia-400 rounded-full" style="width:${archPct}%"></div></div>
+        </div>
+      `;
+
+      renderSalesChart(sellerEntries);
+
+      // Filtra tabela conforme aba selecionada ('ACTIVE' vs 'ARCHIVED')
+      const tableList = state.adminTab === "ARCHIVED" ? archivedItems : visibleItems;
+      const tbody = document.getElementById("admin-auctions-table");
+
+      if (tableList.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="py-8 px-4 text-center text-slate-400">
+              ${
+                state.adminTab === "ARCHIVED"
+                  ? "Nenhum leilão arquivado (+24h) no momento. Use o botão 'Simular +24h em Encerrados' no topo para testar."
+                  : "Nenhuma carta ativa na vitrine."
+              }
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = tableList
+        .map((a) => {
+          const st = getAuctionStatus(a, nowTs);
+          const isArch = isArchivedOver24h(a, nowTs);
+          const netPayout = (a.currentBid || 0) * (1 - feeRate);
+
+          const statusPill = isArch
+            ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/35">ARQUIVADO (+24H)</span>`
+            : st === "LIVE"
+            ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400">AO VIVO</span>`
+            : st === "SCHEDULED"
+            ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300">AGENDADO</span>`
+            : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-700 text-slate-300">ENCERRADO (&lt;24H)</span>`;
+
+          // Contato completo do vencedor/líder visível exclusivamente no painel administrativo/leiloeiro
+          const leaderContactHtml = a.highestBidder
+            ? `
+              <div class="font-extrabold text-amber-400 text-sm">${formatBRL(a.currentBid)}</div>
+              <div class="font-bold text-white mt-0.5">${a.highestBidder}</div>
+              <div class="text-[11px] text-emerald-400 font-medium mt-0.5">📱 ${a.highestBidderPhone || "Não informado"}</div>
+              <div class="text-[11px] text-purple-300 truncate max-w-[190px]">✉️ ${a.highestBidderEmail || "Não informado"}</div>
+            `
+            : `<span class="text-slate-500">Sem lances ainda</span>`;
+
+          return `
+            <tr class="hover:bg-purple-950/25 transition">
+              <td class="py-3.5 px-4">
+                <div class="flex items-center gap-3">
+                  <img src="${a.image}" alt="${a.title}" class="w-10 h-14 object-cover rounded-lg border border-purple-500/30 shrink-0" />
+                  <div>
+                    <div class="font-bold text-white">${a.title}</div>
+                    <div class="text-[11px] text-slate-400">${a.set} • ${a.condition}</div>
+                    <div class="mt-1">${statusPill}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="py-3.5 px-4 text-slate-300 font-medium">${a.seller}</td>
+              <td class="py-3.5 px-4 text-slate-300">
+                <div>Abre: <strong>${formatShortDateTime(a.startTime)}</strong></div>
+                <div>Fecha: <strong>${formatShortDateTime(a.endTime)}</strong></div>
+              </td>
+              <td class="py-3.5 px-4">
+                <div class="flex flex-wrap gap-1 max-w-[185px]">
+                  ${a.presetBids
+                    .map(
+                      (v) =>
+                        `<span class="px-2 py-0.5 rounded bg-[#070714] border border-purple-500/30 text-[11px] font-bold text-amber-300">${formatBRL(
+                          v
+                        )}</span>`
+                    )
+                    .join("")}
+                </div>
+              </td>
+              <td class="py-3.5 px-4">${leaderContactHtml}</td>
+              <td class="py-3.5 px-4">
+                <div class="font-bold text-fuchsia-300">${formatBRL(netPayout)}</div>
+                <div class="text-[10px] text-slate-500">Taxa: ${formatBRL((a.currentBid || 0) * feeRate)}</div>
+              </td>
+              <td class="py-3.5 px-4 text-right space-x-1 whitespace-nowrap">
+                <button onclick="openEditAuctionModal('${a.id}')" class="px-2.5 py-1.5 rounded-lg bg-purple-950/70 hover:bg-purple-800/70 text-slate-200 font-semibold transition">
+                  Editar
+                </button>
+                <button onclick="toggleForceAuctionStatus('${a.id}')" class="px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 font-semibold transition">
+                  ${st === "ENDED" ? "Reabrir" : "Encerrar"}
+                </button>
+                <button onclick="deleteAuctionItem('${a.id}')" class="px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 font-semibold transition">
+                  Excluir
+                </button>
+              </td>
+            </tr>
+          `;
+        })
+        .join("");
+    }
+
+    function renderSalesChart(sellerEntries) {
+      const ctx = document.getElementById("salesShareChart");
+      if (!ctx) return;
+
+      const labels = sellerEntries.map(([name]) => name);
+      const dataValues = sellerEntries.map(([, info]) => info.volume);
+      const hasData = dataValues.some((v) => v > 0);
+
+      if (salesChart) {
+        salesChart.destroy();
+      }
+
+      salesChart = new Chart(ctx, {
+        type: "doughnut",
+        data: {
+          labels: hasData ? labels : ["Aguardando Lances"],
+          datasets: [
+            {
+              data: hasData ? dataValues : [1],
+              backgroundColor: hasData
+                ? ["#facc15", "#ec4899", "#a855f7", "#38bdf8", "#34d399"]
+                : ["#1e1b4b"],
+              borderColor: "#0d0b22",
+              borderWidth: 3
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: "66%",
+          plugins: {
+            legend: {
+              position: "bottom",
+              labels: {
+                color: "#e2e8f0",
+                font: { size: 11, family: "Inter" },
+                boxWidth: 12
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // ==================== CADASTRO & UPLOAD DE IMAGEM DE CARTA ====================
+    window.openNewAuctionModal = function () {
+      document.getElementById("form-modal-title").textContent = "Cadastrar Nova Carta para Leilão";
+      document.getElementById("edit-auction-id").value = "";
+      document.getElementById("auction-form").reset();
+      state.uploadedImageBase64 = "";
+
+      const preview = document.getElementById("form-image-preview");
+      const placeholder = document.getElementById("form-upload-placeholder");
+      preview.classList.add("hidden");
+      placeholder.classList.remove("hidden");
+
+      const current = Date.now();
+      document.getElementById("form-start-time").value = toDatetimeLocalValue(current);
+      document.getElementById("form-end-time").value = toDatetimeLocalValue(current + 1000 * 60 * 60 * 2);
+      document.getElementById("form-bid-1").value = 30;
+      document.getElementById("form-bid-2").value = 40;
+      document.getElementById("form-bid-3").value = 50;
+      document.getElementById("form-bid-4").value = 80;
+
+      document.getElementById("form-modal").classList.remove("hidden");
+    };
+
+    window.openEditAuctionModal = function (auctionId) {
+      const item = state.auctions.find((a) => a.id === auctionId);
+      if (!item) return;
+
+      document.getElementById("form-modal-title").textContent = `Editar Carta: ${item.title}`;
+      document.getElementById("edit-auction-id").value = item.id;
+      document.getElementById("form-title").value = item.title;
+      document.getElementById("form-set").value = item.set;
+      document.getElementById("form-rarity").value = item.rarity;
+      document.getElementById("form-condition").value = item.condition;
+      document.getElementById("form-seller").value = item.seller;
+      document.getElementById("form-start-time").value = toDatetimeLocalValue(item.startTime);
+      document.getElementById("form-end-time").value = toDatetimeLocalValue(item.endTime);
+
+      document.getElementById("form-bid-1").value = item.presetBids[0];
+      document.getElementById("form-bid-2").value = item.presetBids[1];
+      document.getElementById("form-bid-3").value = item.presetBids[2];
+      document.getElementById("form-bid-4").value = item.presetBids[3];
+
+      state.uploadedImageBase64 = item.image;
+      const preview = document.getElementById("form-image-preview");
+      const placeholder = document.getElementById("form-upload-placeholder");
+      preview.src = item.image;
+      preview.classList.remove("hidden");
+      placeholder.classList.add("hidden");
+
+      document.getElementById("form-modal").classList.remove("hidden");
+    };
+
+    window.closeFormModal = function () {
+      document.getElementById("form-modal").classList.add("hidden");
+    };
+
+    window.handleImageUpload = function (event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const img = new Image();
+        img.onload = function () {
+          const canvas = document.createElement("canvas");
+          const maxW = 420;
+          const scale = Math.min(1, maxW / img.width);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.85);
+          state.uploadedImageBase64 = compressedDataUrl;
+
+          const preview = document.getElementById("form-image-preview");
+          const placeholder = document.getElementById("form-upload-placeholder");
+          preview.src = compressedDataUrl;
+          preview.classList.remove("hidden");
+          placeholder.classList.add("hidden");
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    };
+
+    window.handleSaveAuction = async function (event) {
+      event.preventDefault();
+
+      const editId = document.getElementById("edit-auction-id").value;
+      const title = document.getElementById("form-title").value.trim();
+      const set = document.getElementById("form-set").value.trim();
+      const rarity = document.getElementById("form-rarity").value;
+      const condition = document.getElementById("form-condition").value;
+      const seller = document.getElementById("form-seller").value.trim() || "Leiloeiro Oficial";
+
+      const startTime = new Date(document.getElementById("form-start-time").value).getTime();
+      const endTime = new Date(document.getElementById("form-end-time").value).getTime();
+
+      if (endTime <= startTime) {
+        showToast("Horário Inválido", "O horário de fechamento deve ser posterior ao de abertura.", "warning");
+        return;
+      }
+
+      const b1 = Number(document.getElementById("form-bid-1").value);
+      const b2 = Number(document.getElementById("form-bid-2").value);
+      const b3 = Number(document.getElementById("form-bid-3").value);
+      const b4 = Number(document.getElementById("form-bid-4").value);
+      const presetBids = [b1, b2, b3, b4].sort((a, b) => a - b);
+
+      const fallbackSVG = createCardArtSVG({
+        name: title.slice(0, 18),
+        hp: "HP 280",
+        typeColor1: "#581c87",
+        typeColor2: "#1e1b4b",
+        accent: "#facc15",
+        typeLabel: "TCG RARE",
+        subtitle: `${set} • ${condition}`,
+        number: "PROMO TCG"
+      });
+
+      const imageToUse = state.uploadedImageBase64 || fallbackSVG;
+
+      if (editId) {
+        const existing = state.auctions.find((a) => a.id === editId);
+        if (existing) {
+          existing.title = title;
+          existing.set = set;
+          existing.rarity = rarity;
+          existing.condition = condition;
+          existing.seller = seller;
+          existing.startTime = startTime;
+          existing.endTime = endTime;
+          existing.presetBids = presetBids;
+          existing.image = imageToUse;
+          existing.forcedStatus = null;
+          existing.closedTimestamp = null;
+          await persistAuction(existing);
+          showToast("Carta Atualizada", `As configurações de ${title} foram salvas.`, "success");
+        }
+      } else {
+        const newAuction = {
+          id: "card-" + Date.now(),
+          title,
+          set,
+          rarity,
+          condition,
+          seller,
+          image: imageToUse,
+          startTime,
+          endTime,
+          presetBids,
+          currentBid: 0,
+          highestBidder: "",
+          highestBidderPhone: "",
+          highestBidderEmail: "",
+          forcedStatus: null,
+          closedTimestamp: null,
+          bids: []
+        };
+        state.auctions.unshift(newAuction);
+        await persistAuction(newAuction);
+        showToast("Carta Publicada!", `${title} entrou na vitrine pública de leilões.`, "success");
+      }
+
+      closeFormModal();
+      refreshAllViews();
+    };
+
+    window.toggleForceAuctionStatus = async function (auctionId) {
+      const item = state.auctions.find((a) => a.id === auctionId);
+      if (!item) return;
+      const currentSt = getAuctionStatus(item);
+      if (currentSt === "ENDED") {
+        item.forcedStatus = "LIVE";
+        item.closedTimestamp = null;
+        if (item.endTime <= Date.now()) {
+          item.endTime = Date.now() + 1000 * 60 * 30;
+        }
+        showToast("Leilão Reaberto", `${item.title} voltou à vitrine pública.`, "info");
+      } else {
+        item.forcedStatus = "ENDED";
+        item.closedTimestamp = Date.now();
+        showToast("Martelo Batido!", `${item.title} encerrado. Será ocultado da vitrine após 24h.`, "warning");
+      }
+      await persistAuction(item);
+      refreshAllViews();
+    };
+
+    window.deleteAuctionItem = async function (auctionId) {
+      state.auctions = state.auctions.filter((a) => a.id !== auctionId);
+      await removeAuctionFromCloud(auctionId);
+      refreshAllViews();
+      showToast("Lote Removido", "A carta foi excluída permanentemente.", "info");
+    };
+
+    // ==================== LOOP DE ATUALIZAÇÃO EM TEMPO REAL (1 SEGUNDO) ====================
+    function refreshAllViews() {
+      renderAuctionGrid();
+      if (state.currentView === "dashboard") {
+        renderDashboard();
+      }
+      if (state.selectedAuctionId) {
+        renderBidModalContent();
+      }
+    }
+
+    setInterval(() => {
+      const nowTs = Date.now();
+      state.auctions.forEach((auction) => {
+        const el = document.querySelector(`[data-countdown-id="${auction.id}"]`);
+        if (el) {
+          const st = getAuctionStatus(auction, nowTs);
+          el.textContent =
+            st === "LIVE"
+              ? formatCountdown(auction.endTime - nowTs)
+              : st === "SCHEDULED"
+              ? `Abre em ${formatCountdown(auction.startTime - nowTs)}`
+              : "Sai em <24h";
+        }
+      });
+
+      if (state.selectedAuctionId) {
+        renderBidModalContent();
+      }
+    }, 1000);
+
+    // ==================== INICIALIZAÇÃO ====================
+    window.addEventListener("DOMContentLoaded", () => {
+      syncFeeUI();
+      refreshAllViews();
+      initFirebaseIfAvailable();
+    });
+  </script>
+</body>
+</html>
